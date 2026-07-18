@@ -1,16 +1,20 @@
-// AURA VR — gerçek WebXR uyumlu "kavisli ekran" modu.
+// AURA VR — "kavisli ekran" modu (sağlam hibrit render).
 //
-// Neden yeniden yazıldı: eski sürüm kokpiti drei <Html transform> ile CANLI DOM
-// olarak gösteriyordu. immersive-vr oturumunda (Quest) tarayıcı YALNIZ WebGL
-// katmanını composite eder — DOM görünmez. Yani başlığa girince panel boş kalıyordu.
+// İki ortam, iki yol — beyaz/boş ekran riskini tamamen ortadan kaldırmak için:
 //
-// Yeni yaklaşım: kokpit arayüzü ekran dışında canlı DOM olarak render edilir,
-// html-to-image ile bir <canvas>'a rasterize edilip THREE.CanvasTexture olarak
-// 3B ekran mesh'ine yansıtılır. Doku WebGL olduğundan VR başlığında DA görünür.
-// Kumanda ışını (veya masaüstünde fare) ekrana pointer event gönderir; ışının
-// vurduğu nokta UV → DOM koordinatına çevrilip gerçek bir tıklamaya dönüştürülür,
-// böylece faz şeridi (Dynamic Focus Mode) dahil tüm panel gerçekten tıklanabilir.
-// VR içinde 2B overlay görünmediğinden temel aksiyonlar için 3B butonlar eklendi.
+// 1) MASAÜSTÜ (herhangi bir tarayıcı, Safari dahil): kokpit, 3B grid backdrop'un
+//    ÜZERİNDE merkezi, düz, etkileşimli bir DOM paneli olarak gösterilir. Hiç
+//    WebGL'e/rasterize'a/CSS3D matrix'e bağlı değildir → her tarayıcıda birebir
+//    çalışır, faz şeridi (Dynamic Focus Mode) doğrudan tıklanabilir. Beyaz ekran
+//    imkânsız.  (Neden gerekli: html-to-image bazı tarayıcılarda — özellikle
+//    Safari — <foreignObject> canvas'ını taint eder/boş üretir; masaüstünde ona
+//    hiç bel bağlamayız.)
+//
+// 2) GERÇEK BAŞLIK (immersive-vr): tarayıcı yalnız WebGL katmanını composite
+//    eder, DOM görünmez. Bu yüzden yalnız oturum içinde kokpit ekran-dışı canlı
+//    DOM'dan html-to-image ile bir CanvasTexture'a rasterize edilip 3B ekran
+//    mesh'ine yansıtılır (Quest tarayıcısı Chromium tabanlı, orada çalışır).
+//    Kumanda ışını UV → DOM eşlemesiyle panele tıklamayı sağlar.
 
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
@@ -26,12 +30,13 @@ const store = createXRStore()
 
 const NAV = ['layout-dashboard', 'play', 'radar', 'stack', 'cloud', 'bell', 'settings']
 
-// Fiziksel ekran boyutu (metre). Yükseklik yakalanan dokunun en-boy oranından türetilir.
+// VR ekran mesh'i (yalnız immersive yol) fiziksel boyutu (metre).
 const SCREEN_W = 3.4
+const SCREEN_H = 2.0
 const SCREEN_POS = [0, 1.5, -2.3]
 
-// Yakalama kaynağı: ekran dışında render edilen canlı kokpit. Faz şeridi gerçek
-// setCur ile bağlı olduğundan ışın tıklaması bu DOM'u günceller.
+// Kokpit arayüzü. Masaüstünde görünür panel, immersive'de ekran-dışı yakalama kaynağı.
+// Faz şeridi gerçek setCur ile bağlı olduğundan her iki yolda da tıklanabilir.
 function CockpitScreen({ cur, setCur, theme, degraded }) {
   return (
     <div className="cockpit">
@@ -68,8 +73,7 @@ function CockpitScreen({ cur, setCur, theme, degraded }) {
   )
 }
 
-// 3B buton yüzeyi için canvas'a çizilmiş etiket dokusu (ağ/ font bağımlılığı yok,
-// Türkçe karakterleri sistem fontuyla doğru çizer).
+// 3B buton yüzeyi için canvas'a çizilmiş etiket dokusu (ağ/font bağımlılığı yok).
 function makeLabelTexture(label, accent) {
   const W = 512, H = 168, r = 26, x = 6, y = 6, w = W - 12, h = H - 12
   const c = document.createElement('canvas')
@@ -99,8 +103,7 @@ function makeLabelTexture(label, accent) {
   return t
 }
 
-// Işın/fare ile tıklanabilen 3B buton. Hem masaüstü faresi hem XR kumandası
-// R3F pointer event'lerini tetikler.
+// Işın/fare ile tıklanabilen 3B buton (immersive'de temel aksiyonlar).
 function VRButton({ position, label, accent, onClick }) {
   const [hover, setHover] = useState(false)
   const tex = useMemo(() => makeLabelTexture(label, accent), [label, accent])
@@ -119,24 +122,24 @@ function VRButton({ position, label, accent, onClick }) {
   )
 }
 
-// Ekranın arkasındaki çerçeve + turkuaz kenar parıltısı.
-function ScreenFrame({ height }) {
+// Ekranın arkasındaki çerçeve + turkuaz kenar parıltısı (immersive yol).
+function ScreenFrame() {
   return (
     <group position={SCREEN_POS}>
       <mesh position={[0, 0, -0.06]}>
-        <planeGeometry args={[SCREEN_W + 0.22, height + 0.22]} />
+        <planeGeometry args={[SCREEN_W + 0.22, SCREEN_H + 0.22]} />
         <meshBasicMaterial color="#0a1218" side={THREE.DoubleSide} toneMapped={false} />
       </mesh>
       <mesh position={[0, 0, -0.08]}>
-        <planeGeometry args={[SCREEN_W + 0.42, height + 0.42]} />
+        <planeGeometry args={[SCREEN_W + 0.42, SCREEN_H + 0.42]} />
         <meshBasicMaterial color="#123039" side={THREE.DoubleSide} toneMapped={false} transparent opacity={0.5} />
       </mesh>
     </group>
   )
 }
 
-// Kokpit dokusunu taşıyan ekran. onSelect'e ışının vurduğu yerel nokta iletilir.
-function ScreenMesh({ texture, width, height, ready, onSelect }) {
+// Immersive yol: kokpit dokusunu taşıyan ekran. onSelect'e ışının yerel noktası iletilir.
+function ScreenMesh({ texture, ready, onSelect }) {
   const ref = useRef()
   return (
     <mesh
@@ -144,27 +147,27 @@ function ScreenMesh({ texture, width, height, ready, onSelect }) {
       position={SCREEN_POS}
       onClick={(e) => { e.stopPropagation(); onSelect(e, ref.current) }}
     >
-      <planeGeometry args={[width, height]} />
+      <planeGeometry args={[SCREEN_W, SCREEN_H]} />
       <meshBasicMaterial map={ready ? texture : null} color={ready ? '#ffffff' : '#0a1218'} toneMapped={false} />
     </mesh>
   )
 }
 
-// XR oturumu yokken (masaüstü) fareyle bakış; oturum açıkken kamera XR'a ait.
+// XR oturumu yokken (masaüstü) fareyle backdrop'a bakış; oturum açıkken kamera XR'a ait.
 function DesktopControls() {
   const session = useXR((s) => s.session)
   if (session) return null
   return (
     <OrbitControls
-      target={SCREEN_POS} enablePan={false}
-      minDistance={1.4} maxDistance={7}
-      minPolarAngle={0.55} maxPolarAngle={1.72}
+      target={[0, 1, -3]} enablePan={false}
+      minDistance={1.4} maxDistance={9}
+      minPolarAngle={0.7} maxPolarAngle={1.6}
       enableDamping dampingFactor={0.08}
     />
   )
 }
 
-// Yerel nokta / rect üzerinden ekran dışı DOM'da gerçek tıklamayı sentezle.
+// Yerel nokta / rect üzerinden ekran-dışı DOM'da gerçek tıklamayı sentezle (immersive yol).
 function dispatchClick(el, clientX, clientY) {
   const o = { bubbles: true, cancelable: true, clientX, clientY, view: window, button: 0 }
   const p = { ...o, pointerId: 1, pointerType: 'mouse', isPrimary: true }
@@ -180,15 +183,12 @@ export function VRStage({ cur, setCur, theme, setTheme, degraded, setDegraded, o
   const [note, setNote] = useState('')
   const [inSession, setInSession] = useState(false)
   const [ready, setReady] = useState(false)
-  const [aspect, setAspect] = useState(1.6)
   const [scale, setScale] = useState(1)
 
-  const hostRef = useRef(null)       // yakalanan (doğal 1320px) kokpit düğümü
-  const busy = useRef(false)         // eşzamanlı yakalamayı engelle
+  const hostRef = useRef(null)       // immersive: ekran-dışı yakalanan kokpit düğümü
+  const busy = useRef(false)
 
-  const screenH = SCREEN_W / aspect
-
-  // Tek CanvasTexture + hedef canvas — her karede yeniden tahsis etme.
+  // Immersive yolu için tek CanvasTexture + hedef canvas.
   const targetCanvas = useMemo(() => document.createElement('canvas'), [])
   const texture = useMemo(() => {
     const t = new THREE.CanvasTexture(targetCanvas)
@@ -197,56 +197,44 @@ export function VRStage({ cur, setCur, theme, setTheme, degraded, setDegraded, o
     return t
   }, [targetCanvas])
 
-  // Canlı DOM'u dokuya rasterize et.
+  // Canlı DOM'u dokuya rasterize et (YALNIZ immersive oturumda çağrılır).
   const capture = useCallback(async () => {
     const node = hostRef.current
     if (!node || busy.current) return
     busy.current = true
     try {
-      // Google Fonts stylesheet'i cross-origin olduğundan gömülemez (CORS) ve
-      // html-to-image her karede onu getirmeye çalışıp konsolu hatayla doldurur.
-      // fontEmbedCSS:'' bu ağ çağrısını tamamen atlatır (skipFonts bu sürümde
-      // onurlandırılmıyor). Metin sistem fontuyla çizilir — 'Inter', system-ui
-      // zaten font yığınında, görsel fark yok; yakalama da çok daha hızlı.
-      const c = await toCanvas(node, {
-        pixelRatio: 1.75,
-        cacheBust: false,
-        skipFonts: true,
-        fontEmbedCSS: '',
-      })
+      const c = await toCanvas(node, { pixelRatio: 1.75, cacheBust: false, skipFonts: true, fontEmbedCSS: '' })
       if (c.width && c.height) {
         targetCanvas.width = c.width
         targetCanvas.height = c.height
         targetCanvas.getContext('2d').drawImage(c, 0, 0)
         texture.needsUpdate = true
-        setAspect(c.width / c.height)
         setReady(true)
       }
-    } catch { /* bir kare atla, sonraki dener */ }
+    } catch { /* bir kare atla */ }
     finally { busy.current = false }
   }, [targetCanvas, texture])
 
-  // Etkileşimden sonra değişikliği yakalamak için kısa seri.
   const bumpCapture = useCallback(() => {
     capture()
     setTimeout(capture, 130)
     setTimeout(capture, 340)
   }, [capture])
 
-  // Işın vuruşu → ekran dışı DOM'da tıklama.
+  // Immersive yol: ışın vuruşu → ekran-dışı DOM'da tıklama.
   const onSelect = useCallback((e, mesh) => {
     const node = hostRef.current
     if (!node || !mesh || !e.point) return
     const local = mesh.worldToLocal(e.point.clone())
     const u = THREE.MathUtils.clamp(local.x / SCREEN_W + 0.5, 0, 1)
-    const v = THREE.MathUtils.clamp(local.y / screenH + 0.5, 0, 1)
+    const v = THREE.MathUtils.clamp(local.y / SCREEN_H + 0.5, 0, 1)
     const rect = node.getBoundingClientRect()
     const x = rect.left + u * rect.width
     const y = rect.top + (1 - v) * rect.height
     const target = document.elementsFromPoint(x, y).find((el) => node.contains(el))
     if (target) dispatchClick(target, x, y)
     bumpCapture()
-  }, [screenH, bumpCapture])
+  }, [bumpCapture])
 
   // WebXR desteği.
   useEffect(() => {
@@ -254,21 +242,18 @@ export function VRStage({ cur, setCur, theme, setTheme, degraded, setDegraded, o
     navigator.xr.isSessionSupported('immersive-vr').then(setSupported).catch(() => setSupported(false))
   }, [])
 
-  // Oturum durumunu izle (overlay ipucu + kamera).
+  // Oturum durumunu izle — masaüstü/immersive yolunu belirler.
   useEffect(() => {
     setInSession(!!store.getState().session)
     return store.subscribe((s) => setInSession(!!s.session))
   }, [])
 
-  // Ekran dışı düğümü görünüme sığdır — böylece elementsFromPoint tüm paneli
-  // vurabilir (yakalama doğal 1320px'de kalır, bu yalnız isabet testini etkiler).
+  // Kokpit panelini görünüme sığdıran ölçek (hem masaüstü görünür panel hem
+  // immersive ekran-dışı isabet testi için doğal ~1364×800 kutu).
   useLayoutEffect(() => {
     const measure = () => {
-      const node = hostRef.current
-      if (!node) return
-      const w = node.scrollWidth || 1320
-      const h = node.scrollHeight || 820
-      const s = Math.min(1, (window.innerWidth - 24) / w, (window.innerHeight - 24) / h)
+      const w = 1364, h = 800
+      const s = Math.min(1, (window.innerWidth - 40) / w, (window.innerHeight - 130) / h)
       setScale(s > 0 ? s : 1)
     }
     measure()
@@ -276,15 +261,16 @@ export function VRStage({ cur, setCur, theme, setTheme, degraded, setDegraded, o
     return () => window.removeEventListener('resize', measure)
   }, [])
 
-  // İlk yakalama + canlı kalp atışı (saat/animasyonlu widget'lar için).
+  // Immersive yol yakalaması: ilk kare + kalp atışı. Masaüstünde html-to-image HİÇ çalışmaz.
   useEffect(() => {
+    if (!inSession) return
     const t = setTimeout(capture, 90)
     const hb = setInterval(capture, 1200)
     return () => { clearTimeout(t); clearInterval(hb) }
-  }, [capture])
+  }, [inSession, capture])
 
-  // Faz/durum/tema değişince hemen yeni kare al.
-  useEffect(() => { bumpCapture() }, [cur, degraded, theme, bumpCapture])
+  // Immersive yolda faz/tema/durum değişince yeni kare al.
+  useEffect(() => { if (inSession) bumpCapture() }, [cur, degraded, theme, inSession, bumpCapture])
 
   const enterVR = useCallback(async () => {
     try { await store.enterVR(); setNote('') }
@@ -294,7 +280,7 @@ export function VRStage({ cur, setCur, theme, setTheme, degraded, setDegraded, o
   const prevPhase = () => setCur(Math.max(0, cur - 1))
   const nextPhase = () => setCur(Math.min(PHASES.length - 1, cur + 1))
 
-  // 3B buton satırı (VR içinde overlay görünmediğinden temel aksiyonlar burada).
+  // 3B buton satırı — immersive içinde (overlay görünmez) temel aksiyonlar.
   const buttons = [
     { label: '‹ Faz', fn: prevPhase },
     { label: 'Faz ›', fn: nextPhase },
@@ -307,12 +293,25 @@ export function VRStage({ cur, setCur, theme, setTheme, degraded, setDegraded, o
 
   return (
     <div className="vr-root">
-      {/* Yakalama kaynağı — görünmez, ekran dışı; scale yalnız isabet testi içindir. */}
-      <div className="vr-capture-host" style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }} aria-hidden="true">
-        <div ref={hostRef} className="app vr-screen-app" data-theme={theme}>
-          <CockpitScreen cur={cur} setCur={setCur} theme={theme} degraded={degraded} />
+      {/* MASAÜSTÜ: kokpit düz, merkezi, etkileşimli DOM paneli (backdrop üstünde). */}
+      {!inSession && (
+        <div className="vr-desktop-stage">
+          <div className="vr-cockpit-fit" style={{ transform: `scale(${scale})` }}>
+            <div className="app vr-screen-app" data-theme={theme}>
+              <CockpitScreen cur={cur} setCur={setCur} theme={theme} degraded={degraded} />
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* IMMERSIVE: ekran-dışı yakalama kaynağı (görünmez), dokuya rasterize edilir. */}
+      {inSession && (
+        <div className="vr-capture-host" style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }} aria-hidden="true">
+          <div ref={hostRef} className="app vr-screen-app" data-theme={theme}>
+            <CockpitScreen cur={cur} setCur={setCur} theme={theme} degraded={degraded} />
+          </div>
+        </div>
+      )}
 
       <div className="vr-overlay">
         <div className="vr-brand">AURA · VR</div>
@@ -326,10 +325,10 @@ export function VRStage({ cur, setCur, theme, setTheme, degraded, setDegraded, o
         </div>
         <div className="vr-note">
           {supported === false
-            ? 'immersive-VR desteklenmiyor — 3B önizleme aktif · sürükleyerek bak, panele/faz şeridine tıkla (gerçekten çalışır).'
+            ? 'immersive-VR desteklenmiyor — masaüstü önizleme: panele/faz şeridine doğrudan tıkla, boşluğu sürükleyip ortama bak.'
             : (note || (inSession
               ? 'VR aktif — kumanda ışınıyla panele nişan al ve tetikle; faz şeridi çalışır.'
-              : 'Sürükleyerek bak · panele tıkla · “VR’a Gir” ile Quest’te aynı ekrana geç.'))}
+              : 'Panele doğrudan tıkla · boşluğu sürükleyip ortama bak · “VR’a Gir” ile Quest’e geç.'))}
         </div>
       </div>
 
@@ -340,27 +339,31 @@ export function VRStage({ cur, setCur, theme, setTheme, degraded, setDegraded, o
         dpr={[1, 2]}
       >
         <color attach="background" args={['#05070b']} />
-        <fog attach="fog" args={['#05070b', 8, 26]} />
+        <fog attach="fog" args={['#05070b', 9, 30]} />
 
         <XR store={store}>
           <ambientLight intensity={0.6} />
           <directionalLight position={[3, 6, 3]} intensity={0.6} />
           <pointLight position={[0, 3, 1]} intensity={20} distance={16} color="#2dd4bf" />
 
-          <ScreenFrame height={screenH} />
-          <ScreenMesh texture={texture} width={SCREEN_W} height={screenH} ready={ready} onSelect={onSelect} />
-
-          <group position={[0, 0.3, -1.75]}>
-            {buttons.map((b, i) => (
-              <VRButton key={b.label + i} position={[bX0 + i * bStep, 0, 0]} label={b.label} accent={b.accent} onClick={b.fn} />
-            ))}
-          </group>
+          {/* Immersive'de gerçek 3B ekran + çerçeve + 3B butonlar; masaüstünde yalnız backdrop. */}
+          {inSession && (
+            <>
+              <ScreenFrame />
+              <ScreenMesh texture={texture} ready={ready} onSelect={onSelect} />
+              <group position={[0, 0.3, -1.75]}>
+                {buttons.map((b, i) => (
+                  <VRButton key={b.label + i} position={[bX0 + i * bStep, 0, 0]} label={b.label} accent={b.accent} onClick={b.fn} />
+                ))}
+              </group>
+            </>
+          )}
 
           <Grid
             position={[0, 0, -1]} args={[40, 40]}
             cellSize={0.6} cellThickness={0.6} cellColor="#12303a"
             sectionSize={3} sectionThickness={1} sectionColor="#1c5a63"
-            fadeDistance={28} fadeStrength={1.4} infiniteGrid
+            fadeDistance={30} fadeStrength={1.4} infiniteGrid
           />
 
           <XROrigin position={[0, 0, 0]} />

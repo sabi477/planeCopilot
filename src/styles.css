@@ -338,6 +338,15 @@ body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: anti
 .vr-capture-host { position: fixed; top: 0; left: 0; z-index: -1; opacity: 0; }
 .vr-screen-app { min-height: 0 !important; width: 1320px !important; padding: 22px !important; margin: 0 !important; border-radius: 22px; }
 
+/* Masaüstü: kokpit, 3B backdrop üstünde merkezi, etkileşimli DOM paneli.
+   Sahne pointer-events geçirir (boşlukta sürükle = orbit), panel yakalar. */
+.vr-desktop-stage {
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.vr-cockpit-fit { pointer-events: auto; transform-origin: center center; filter: drop-shadow(0 40px 90px rgba(0,0,0,.6)); }
+
 .vr-overlay {
   position: absolute; top: 0; left: 0; right: 0; z-index: 5;
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
