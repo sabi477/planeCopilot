@@ -183,6 +183,8 @@ body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: anti
 .mode.bottom { bottom: 8px; left: 50%; transform: translateX(-50%); }
 .mode.left { left: 9px; top: 50%; transform: translateY(-50%); }
 .mode.right { right: 9px; top: 50%; transform: translateY(-50%); }
+.mode.corner-l { font-size: 9px; bottom: 20px; left: 4px; }
+.mode.corner-r { font-size: 9px; bottom: 20px; right: 4px; }
 .mode-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 9px; color: var(--dim); }
 .compass { padding: 11px; display: flex; flex-direction: column; align-items: center; }
 .hdg-chip { margin-bottom: 5px; }
@@ -299,6 +301,7 @@ body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: anti
 .scn-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 9px; margin-top: 13px; }
 .scn-metric { background: var(--panel-2); border: 1px solid var(--panel-line); border-radius: 10px; padding: 9px 11px; }
 .scn-metric .lbl { display: block; margin-bottom: 4px; }
+.scn-jogdial { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 13px; padding: 11px; background: var(--panel-2); border: 1px solid var(--panel-line); border-radius: 10px; }
 
 .scn-timeline { padding: 13px 15px; }
 .scn-tl-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }

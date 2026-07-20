@@ -81,9 +81,12 @@ export function Compass({ hdg = 0 }) {
   )
 }
 
-export function JogDial({ appr }) {
+export function JogDial({ appr, autobrakeReady, flapsReady }) {
   const active = (m) => (appr ? m === 'APPR' : ['LNAV', 'VNAV', 'A/THR'].includes(m))
   const pos = { VNAV: 'top', LNAV: 'left', APPR: 'right', 'A/THR': 'bottom' }
+  // Checklist senaryolarında (örn. iniş öncesi) kullanılan ek göstergeler —
+  // yalnızca prop verildiğinde render edilir, Dashboard'daki normal kullanımı etkilemez.
+  const showChecklist = autobrakeReady !== undefined || flapsReady !== undefined
   return (
     <div className="dial-wrap">
       <svg viewBox="0 0 96 96" className="dial-svg">
@@ -93,6 +96,8 @@ export function JogDial({ appr }) {
       {Object.keys(pos).map((m) => (
         <span key={m} className={`mode ${pos[m]} ${active(m) ? 'on' : ''}`}>{m}</span>
       ))}
+      {showChecklist && <span className={`mode corner-l ${autobrakeReady ? 'on' : ''}`}>A/BRK</span>}
+      {showChecklist && <span className={`mode corner-r ${flapsReady ? 'on' : ''}`}>FLAP</span>}
       <span className="mode-center">MODE</span>
     </div>
   )

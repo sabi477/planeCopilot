@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { SCENARIOS } from '../data/scenarios.js'
 import { Glyph } from './Glyph.jsx'
+import { JogDial } from './Widgets.jsx'
 import { useLang } from '../i18n.jsx'
 
 const SEVC = { info: 'blue', good: 'green', caution: 'amber', warning: 'red' }
@@ -14,6 +15,9 @@ export function Scenarios({ ctrlRef }) {
   const sc = SCENARIOS[sel]
   const last = sc.steps.length - 1
   const cur = sc.steps[step]
+  // Bazı senaryolar (iniş öncesi checklist) son adımda AURA JogDial'ı otomatik fren/flap
+  // teyidiyle senkron gösterir — adım o noktaya ulaşınca gösterge yanar ve öyle kalır.
+  const jogIdx = sc.steps.findIndex((s) => s.jogdial)
 
   // Otomatik oynatma
   useEffect(() => {
@@ -114,6 +118,13 @@ export function Scenarios({ ctrlRef }) {
                 {Object.entries(cur.m).map(([k, v]) => (
                   <div key={k} className="scn-metric"><p className="lbl">{k}</p><span className="v">{v}</span></div>
                 ))}
+              </div>
+            )}
+
+            {jogIdx !== -1 && (
+              <div className="scn-jogdial">
+                <span className="lbl">AURA JogDial · Autobrake / Flaps</span>
+                <JogDial appr autobrakeReady={step >= jogIdx} flapsReady={step >= jogIdx} />
               </div>
             )}
           </div>
